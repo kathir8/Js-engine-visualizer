@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JS Event Loop Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080a0f;
+  --surface: #0f1118;
+  --card: #13151d;
+  --border: #1c1f2e;
+  --accent: #00e5ff;
+  --micro: #a78bfa;
+  --macro: #fb923c;
+  --webapi: #34d399;
+  --accent2: #ff6b6b;
+  --text: #e2e8f0;
+  --muted: #4a5568;
+  --code-bg: #0b0d14;
+  --loop: #facc15;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:'JetBrains Mono',monospace;
+  min-height:100vh; overflow-x:hidden;
+}
+body::before {
+  content:''; position:fixed; inset:0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.022) 1px, transparent 1px);
+  background-size:44px 44px; pointer-events:none; z-index:0;
+}
+.page { position:relative; z-index:1; max-width:1540px; margin:0 auto; padding:20px 22px; }
+
+/* HEADER */
+header { display:flex; align-items:center; gap:14px; margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+.logo { width:42px; height:42px; background:linear-gradient(135deg,var(--accent),var(--micro)); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; }
+h1 { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; letter-spacing:-0.5px; }
+h1 em { font-style:normal; color:var(--accent); }
+.hbadge { margin-left:auto; padding:3px 12px; border:1px solid var(--accent); border-radius:20px; color:var(--accent); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+
+/* LEGEND */
+.legend { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+.li { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--muted); }
+.ld { width:8px; height:8px; border-radius:50%; }
+
+/* PRESETS */
+.presets { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+.pb { padding:5px 13px; font-size:11px; border-radius:20px; background:transparent; color:var(--muted); border:1px solid var(--border); cursor:pointer; transition:all 0.2s; font-family:'JetBrains Mono',monospace; }
+.pb:hover,.pb.on { color:var(--accent); border-color:var(--accent); background:rgba(0,229,255,0.06); }
+
+/* GRID */
+.grid { display:grid; grid-template-columns:470px 1fr; gap:16px; align-items:start; }
+.lcol { display:flex; flex-direction:column; gap:14px; }
+.rcol { display:flex; flex-direction:column; gap:14px; }
+.r-top { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.r-mid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+
+/* PANEL */
+.panel { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+.ph { display:flex; align-items:center; gap:8px; padding:10px 15px; background:var(--surface); border-bottom:1px solid var(--border); }
+.dot { width:9px; height:9px; border-radius:50%; }
+.dot.r{background:#ff5f57;}.dot.y{background:#febc2e;}.dot.g{background:#28c840;}
+.pt { margin-left:4px; font-size:10px; color:var(--muted); letter-spacing:0.5px; text-transform:uppercase; }
+.pbadge { margin-left:auto; padding:2px 8px; border-radius:10px; font-size:9px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; }
+.bs { background:rgba(0,229,255,0.1);   color:var(--accent); border:1px solid rgba(0,229,255,0.2); }
+.bm { background:rgba(167,139,250,0.1); color:var(--micro);  border:1px solid rgba(167,139,250,0.2); }
+.bM { background:rgba(251,146,60,0.1);  color:var(--macro);  border:1px solid rgba(251,146,60,0.2); }
+.bw { background:rgba(52,211,153,0.1);  color:var(--webapi); border:1px solid rgba(52,211,153,0.2); }
+.bl { background:rgba(250,204,21,0.1);  color:var(--loop);   border:1px solid rgba(250,204,21,0.2); }
+
+/* CODE */
+.code-scroll { background:var(--code-bg); overflow-y:auto; height:340px; padding:14px 16px; }
+.cl { display:flex; gap:12px; padding:2px 5px; border-radius:4px; transition:background 0.15s; }
+.cl.on  { background:rgba(0,229,255,0.08); border-left:2px solid var(--accent); }
+.cl.ex  { background:rgba(0,229,255,0.16); animation:pl 0.5s ease; }
+@keyframes pl { 0%{background:rgba(0,229,255,0.4);} 100%{background:rgba(0,229,255,0.16);} }
+.ln { color:var(--muted); font-size:11px; min-width:20px; text-align:right; user-select:none; }
+.lc { font-size:12px; line-height:1.75; white-space:pre; }
+.kw{color:#c792ea;}.fn{color:#82aaff;}.str{color:#c3e88d;}
+.num{color:#f78c6c;}.cmt{color:#445566;font-style:italic;}
+.vc{color:var(--accent);}.op{color:#89ddff;}.pm{color:#ffcb6b;}
+
+/* CALL STACK */
+.sb { padding:12px; min-height:200px; display:flex; flex-direction:column; }
+.sf { display:flex; flex-direction:column; gap:4px; }
+.sfr {
+  border-radius:7px; padding:8px 11px; display:flex; align-items:center; gap:8px;
+  border:1px solid; font-size:11px; font-weight:600;
+  animation:fi 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes fi { from{transform:translateY(-8px) scaleY(0.6);opacity:0;} to{transform:none;opacity:1;} }
+.c0{background:rgba(0,229,255,0.07);border-color:rgba(0,229,255,0.28);color:var(--accent);}
+.c1{background:rgba(167,139,250,0.07);border-color:rgba(167,139,250,0.28);color:var(--micro);}
+.c2{background:rgba(52,211,153,0.07);border-color:rgba(52,211,153,0.28);color:var(--webapi);}
+.c3{background:rgba(255,107,107,0.07);border-color:rgba(255,107,107,0.28);color:var(--accent2);}
+.c4{background:rgba(251,146,60,0.07);border-color:rgba(251,146,60,0.28);color:var(--macro);}
+.ftag { font-size:9px; margin-left:auto; opacity:0.55; }
+.sfloor { margin-top:auto; padding-top:8px; border-top:1px dashed var(--border); font-size:9px; color:var(--muted); text-align:center; text-transform:uppercase; letter-spacing:1px; }
+.sempty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--muted); font-size:11px; opacity:0.45; gap:4px; padding-bottom:20px; }
+
+/* QUEUES / WEB API */
+.qb { padding:10px 12px; min-height:100px; display:flex; flex-direction:column; gap:5px; }
+.qe { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:10px; opacity:0.4; }
+.qi {
+  border-radius:7px; padding:7px 11px; display:flex; align-items:center; gap:7px;
+  border:1px solid; font-size:11px; font-weight:600;
+  animation:ii 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes ii { from{transform:translateX(10px);opacity:0;} to{transform:none;opacity:1;} }
+.qm { background:rgba(167,139,250,0.1); border-color:rgba(167,139,250,0.32); color:var(--micro); }
+.qM { background:rgba(251,146,60,0.1);  border-color:rgba(251,146,60,0.32);  color:var(--macro); }
+.qw { background:rgba(52,211,153,0.1);  border-color:rgba(52,211,153,0.32);  color:var(--webapi); }
+.qnext { font-size:9px; margin-left:auto; opacity:0.5; }
+
+/* EVENT LOOP DIAGRAM */
+.eld { padding:14px 16px; }
+.elnodes { display:flex; align-items:center; justify-content:center; gap:5px; flex-wrap:wrap; }
+.elnode {
+  padding:7px 12px; border-radius:8px; border:1px solid;
+  font-size:10px; font-weight:600; text-align:center; line-height:1.4;
+  transition:all 0.35s;
+}
+.el-s { background:rgba(0,229,255,0.07); border-color:rgba(0,229,255,0.28); color:var(--accent); }
+.el-m { background:rgba(167,139,250,0.07); border-color:rgba(167,139,250,0.28); color:var(--micro); }
+.el-M { background:rgba(251,146,60,0.07); border-color:rgba(251,146,60,0.28); color:var(--macro); }
+.el-w { background:rgba(52,211,153,0.07); border-color:rgba(52,211,153,0.28); color:var(--webapi); }
+.elnode.anode { transform:scale(1.1); box-shadow:0 0 16px currentColor; filter:brightness(1.4); }
+.elarr { color:var(--loop); font-size:16px; opacity:0.35; transition:all 0.35s; }
+.elarr.aarr { opacity:1; text-shadow:0 0 10px var(--loop); animation:ap 0.5s ease; }
+@keyframes ap { 0%{transform:scale(1.5);} 100%{transform:scale(1);} }
+.eldesc { margin-top:10px; text-align:center; font-size:10px; color:var(--muted); min-height:16px; transition:color 0.3s; }
+.eldesc.a { color:var(--loop); }
+
+/* STATUS / CONTROLS */
+.sbar { display:flex; align-items:center; gap:8px; background:var(--surface); border-radius:10px; padding:8px 13px; font-size:11px; }
+.sdot { width:7px; height:7px; border-radius:50%; background:var(--muted); transition:all 0.3s; }
+.sdot.run { background:var(--webapi); box-shadow:0 0 6px var(--webapi); animation:bl 1s infinite; }
+.sdot.done { background:var(--accent); box-shadow:0 0 6px var(--accent); }
+@keyframes bl { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+.stxt { color:var(--muted); }
+.sc { margin-left:auto; color:var(--muted); font-size:10px; }
+.cp { padding:12px 14px; }
+.cg { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:9px; }
+button { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; padding:8px 10px; border-radius:7px; border:1px solid var(--border); cursor:pointer; transition:all 0.2s; display:flex; align-items:center; justify-content:center; gap:5px; }
+button:disabled { opacity:0.28; cursor:not-allowed; }
+.brun { background:linear-gradient(135deg,rgba(0,229,255,0.1),rgba(167,139,250,0.1)); color:var(--accent); border-color:rgba(0,229,255,0.28); grid-column:span 2; padding:10px; }
+.brun:hover:not(:disabled) { background:linear-gradient(135deg,rgba(0,229,255,0.2),rgba(167,139,250,0.2)); }
+.bstep { background:rgba(167,139,250,0.08); color:var(--micro); border-color:rgba(167,139,250,0.22); }
+.bstep:hover:not(:disabled) { background:rgba(167,139,250,0.18); }
+.breset { background:rgba(255,107,107,0.07); color:var(--accent2); border-color:rgba(255,107,107,0.18); }
+.breset:hover:not(:disabled) { background:rgba(255,107,107,0.15); }
+.spd { display:flex; align-items:center; gap:9px; }
+.sl { font-size:10px; color:var(--muted); white-space:nowrap; }
+input[type=range] { flex:1; -webkit-appearance:none; height:3px; background:var(--border); border-radius:2px; outline:none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:var(--accent); cursor:pointer; box-shadow:0 0 7px rgba(0,229,255,0.5); }
+
+/* LOG + CONSOLE */
+.logb { padding:9px 13px; max-height:140px; overflow-y:auto; font-size:11px; line-height:1.7; }
+.loge { display:flex; gap:8px; padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.03); animation:li 0.3s ease; }
+@keyframes li { from{opacity:0;transform:translateX(-5px);} to{opacity:1;transform:none;} }
+.lts { color:var(--muted); min-width:28px; }
+.lpush { color:#34d399; } .lpop { color:#ff6b6b; }
+.lmic  { color:var(--micro); } .lmac { color:var(--macro); }
+.lloop { color:var(--loop); } .linf  { color:var(--muted); }
+.cout { padding:9px 13px; max-height:100px; overflow-y:auto; font-size:12px; line-height:1.8; }
+.cline { display:flex; gap:8px; align-items:center; padding:1px 0; }
+.carr { color:var(--muted); font-size:10px; }
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="logo">⚡</div>
+  <div>
+    <h1>JS Event Loop <em>Visualizer</em></h1>
+    <div style="font-size:10px;color:var(--muted);margin-top:2px;">Call Stack · Microtask Queue · Macrotask Queue · Web APIs · Event Loop</div>
+  </div>
+  <div class="hbadge">Interactive</div>
+</header>
+
+<div class="legend">
+  <div class="li"><div class="ld" style="background:var(--accent)"></div>Call Stack</div>
+  <div class="li"><div class="ld" style="background:var(--micro)"></div>Microtask (Promise/.then / queueMicrotask)</div>
+  <div class="li"><div class="ld" style="background:var(--macro)"></div>Macrotask (setTimeout / setInterval / I/O)</div>
+  <div class="li"><div class="ld" style="background:var(--webapi)"></div>Web APIs (timer / fetch)</div>
+  <div class="li"><div class="ld" style="background:var(--loop)"></div>Event Loop</div>
+</div>
+
+<div class="presets" id="presets">
+  <button class="pb on" data-key="promise">Promise Chain</button>
+  <button class="pb" data-key="settimeout">setTimeout</button>
+  <button class="pb" data-key="micromacro">Micro vs Macro</button>
+  <button class="pb" data-key="asyncawait">Async / Await</button>
+  <button class="pb" data-key="mixed">Mixed (Full)</button>
+</div>
+
+<div class="grid">
+  <!-- LEFT -->
+  <div class="lcol">
+    <div class="panel">
+      <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt" id="fname">script.js</span></div>
+      <div class="code-scroll"><div id="codedisplay"></div></div>
+    </div>
+    <div class="sbar">
+      <div class="sdot" id="sdot"></div>
+      <span class="stxt" id="stxt">Ready to execute</span>
+      <span class="sc" id="sc">Step 0 / 0</span>
+    </div>
+    <div class="panel">
+      <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt">Controls</span></div>
+      <div class="cp">
+        <div class="cg">
+          <button class="brun" id="btnrun" onclick="runAll()">▶ Run All</button>
+          <button class="bstep" id="btnstep" onclick="stepFwd()">⏭ Step →</button>
+          <button class="breset" onclick="resetAll()">↺ Reset</button>
+        </div>
+        <div class="spd">
+          <span class="sl">Speed</span>
+          <input type="range" id="speed" min="150" max="2000" value="850" step="50">
+          <span class="sl" id="spv">850ms</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <span class="pt">Execution Log</span>
+        <button onclick="document.getElementById('logb').innerHTML=''" style="margin-left:auto;padding:2px 7px;font-size:9px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;cursor:pointer;">clear</button>
+      </div>
+      <div class="logb" id="logb"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="rcol">
+    <div class="r-top">
+      <!-- CALL STACK -->
+      <div class="panel">
+        <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt">Call Stack</span><span class="pbadge bs" id="sdepth">0</span></div>
+        <div class="sb" id="stackbody">
+          <div class="sf" id="stackframes"></div>
+          <div class="sempty" id="sempty">📋<br>empty</div>
+          <div class="sfloor">▲ top of stack</div>
+        </div>
+      </div>
+      <!-- MICROTASK QUEUE -->
+      <div class="panel">
+        <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt">Microtask Queue</span><span class="pbadge bm" id="microcnt">0</span></div>
+        <div class="qb" id="microbody"><div class="qe" id="microempty">empty</div></div>
+      </div>
+      <!-- MACROTASK QUEUE -->
+      <div class="panel">
+        <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt">Macrotask Queue</span><span class="pbadge bM" id="macrocnt">0</span></div>
+        <div class="qb" id="macrobody"><div class="qe" id="macroempty">empty</div></div>
+      </div>
+    </div>
+
+    <div class="r-mid">
+      <!-- WEB APIS -->
+      <div class="panel">
+        <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt">Web APIs</span><span class="pbadge bw" id="wacnt">0</span></div>
+        <div class="qb" id="wabody"><div class="qe" id="waempty">idle</div></div>
+      </div>
+      <!-- EVENT LOOP -->
+      <div class="panel">
+        <div class="ph"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span class="pt">Event Loop</span><span class="pbadge bl">🔄 loop</span></div>
+        <div class="eld">
+          <div class="elnodes">
+            <div class="elnode el-s" id="eln-s">Call<br>Stack</div>
+            <div class="elarr" id="ea1">→</div>
+            <div class="elnode el-m" id="eln-m">Micro<br>Tasks</div>
+            <div class="elarr" id="ea2">→</div>
+            <div class="elnode el-M" id="eln-M">Macro<br>Tasks</div>
+            <div class="elarr" id="ea3">→</div>
+            <div class="elnode el-w" id="eln-w">Web<br>APIs</div>
+          </div>
+          <div class="eldesc" id="eldesc">Waiting for execution…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSOLE -->
+    <div class="panel">
+      <div class="ph">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <span class="pt">Console Output</span>
+        <button onclick="clearConsole()" style="margin-left:auto;padding:2px 7px;font-size:9px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:4px;cursor:pointer;">clear</button>
+      </div>
+      <div class="cout" id="cout"><span style="color:var(--muted);font-size:11px;">// output will appear here</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  PRESETS
+// ═══════════════════════════════════════════════════════════════
+const PRESETS = {
+
+promise: {
+  name:'promise.js',
+  code:[
+    {t:`console.<span class="fn">log</span>(<span class="str">"start"</span>);`},
+    {t:``},
+    {t:`Promise.<span class="fn">resolve</span>(<span class="num">42</span>)`},
+    {t:`  .<span class="fn">then</span>(<span class="pm">val</span> <span class="op">=></span> {`},
+    {t:`    console.<span class="fn">log</span>(<span class="str">"then:"</span>, <span class="pm">val</span>);`},
+    {t:`  });`},
+    {t:``},
+    {t:`console.<span class="fn">log</span>(<span class="str">"end"</span>);`},
+  ],
+  steps:[
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'Call Stack begins executing synchronous code'},
+    {k:'push', frame:{name:'main script', icon:'📄', tag:'global'}, line:0},
+    {k:'hl', line:0},
+    {k:'con', text:'<span style="color:#34d399">start</span>'},
+    {k:'hl', line:2},
+    {k:'push', frame:{name:'Promise.resolve(42)', icon:'🔵', tag:'sync'}, line:2},
+    {k:'micro-add', item:{name:'.then(val => ...)', icon:'💜'}, log:'Promise resolved → .then() → Microtask Queue'},
+    {k:'pop', line:2, log:'Promise.resolve() returns'},
+    {k:'hl', line:7},
+    {k:'con', text:'<span style="color:#34d399">end</span>'},
+    {k:'pop', line:7, log:'main script sync done'},
+    {k:'loop', nodes:['eln-s','eln-m'], arrs:['ea1'], desc:'Stack empty → Event Loop checks Microtask Queue FIRST'},
+    {k:'micro-run', log:'Dequeue microtask → push to Call Stack'},
+    {k:'push', frame:{name:'.then callback(42)', icon:'💜', tag:'microtask'}, line:4},
+    {k:'hl', line:4},
+    {k:'con', text:'<span style="color:#a78bfa">then: 42</span>'},
+    {k:'pop', line:4, log:'.then() callback done'},
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'All queues empty — idle'},
+    {k:'done'},
+  ]
+},
+
+settimeout: {
+  name:'setTimeout.js',
+  code:[
+    {t:`console.<span class="fn">log</span>(<span class="str">"A"</span>);`},
+    {t:``},
+    {t:`<span class="fn">setTimeout</span>(() <span class="op">=></span> {`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"C — macrotask"</span>);`},
+    {t:`}, <span class="num">0</span>);`},
+    {t:``},
+    {t:`console.<span class="fn">log</span>(<span class="str">"B"</span>);`},
+  ],
+  steps:[
+    {k:'push', frame:{name:'main script', icon:'📄', tag:'global'}, line:0},
+    {k:'hl', line:0},
+    {k:'con', text:'<span style="color:#34d399">A</span>'},
+    {k:'hl', line:2},
+    {k:'push', frame:{name:'setTimeout(..., 0)', icon:'🟠', tag:'sync'}, line:2},
+    {k:'wa-add', item:{name:'Timer (0ms)', icon:'⏱'}, log:'setTimeout → handed off to Web API'},
+    {k:'loop', nodes:['eln-w'], arrs:['ea3'], desc:'Web API handles the timer — even 0ms timers are async!'},
+    {k:'pop', line:4, log:'setTimeout() returns immediately'},
+    {k:'wa-done', log:'0ms elapsed → callback → Macrotask Queue'},
+    {k:'macro-add', item:{name:'() => log("C")', icon:'🟠'}, log:'Timer done → Macrotask Queue'},
+    {k:'hl', line:6},
+    {k:'con', text:'<span style="color:#34d399">B</span>'},
+    {k:'pop', line:6, log:'Sync code complete'},
+    {k:'loop', nodes:['eln-s','eln-M'], arrs:['ea2'], desc:'Stack empty → Event Loop picks next Macrotask'},
+    {k:'macro-run', log:'Dequeue macrotask → Call Stack'},
+    {k:'push', frame:{name:'setTimeout cb()', icon:'🟠', tag:'macrotask'}, line:3},
+    {k:'hl', line:3},
+    {k:'con', text:'<span style="color:#fb923c">C — macrotask</span>'},
+    {k:'pop', line:3, log:'Macrotask done'},
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'All queues empty — event loop idle'},
+    {k:'done'},
+  ]
+},
+
+micromacro: {
+  name:'micro-vs-macro.js',
+  code:[
+    {t:`console.<span class="fn">log</span>(<span class="str">"1: sync"</span>);`},
+    {t:``},
+    {t:`<span class="fn">setTimeout</span>(() <span class="op">=></span>`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"4: macro"</span>), <span class="num">0</span>`},
+    {t:`);`},
+    {t:``},
+    {t:`Promise.<span class="fn">resolve</span>().<span class="fn">then</span>(() <span class="op">=></span>`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"3: micro"</span>)`},
+    {t:`);`},
+    {t:``},
+    {t:`console.<span class="fn">log</span>(<span class="str">"2: sync"</span>);`},
+  ],
+  steps:[
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'Synchronous execution begins — top to bottom'},
+    {k:'push', frame:{name:'main script', icon:'📄', tag:'global'}, line:0},
+    {k:'hl', line:0},
+    {k:'con', text:'<span style="color:#34d399">1: sync</span>'},
+    {k:'hl', line:2},
+    {k:'wa-add', item:{name:'Timer 0ms', icon:'⏱'}, log:'setTimeout(0) → Web API'},
+    {k:'wa-done', log:'Timer expired → Macrotask Queue'},
+    {k:'macro-add', item:{name:'() => log("4: macro")', icon:'🟠'}, log:'Callback → Macrotask Queue'},
+    {k:'hl', line:6},
+    {k:'micro-add', item:{name:'() => log("3: micro")', icon:'💜'}, log:'Promise.resolve().then → Microtask Queue'},
+    {k:'hl', line:10},
+    {k:'con', text:'<span style="color:#34d399">2: sync</span>'},
+    {k:'pop', line:10, log:'All sync code finished'},
+    {k:'loop', nodes:['eln-s','eln-m'], arrs:['ea1'], desc:'⚡ Stack empty → Microtasks drain BEFORE any Macrotask!'},
+    {k:'micro-run', log:'Microtask dequeued — runs next'},
+    {k:'push', frame:{name:'Promise.then cb()', icon:'💜', tag:'microtask'}, line:7},
+    {k:'hl', line:7},
+    {k:'con', text:'<span style="color:#a78bfa">3: micro</span>'},
+    {k:'pop', line:7, log:'Microtask done'},
+    {k:'loop', nodes:['eln-s','eln-M'], arrs:['ea2'], desc:'Microtask queue empty → now pick Macrotask'},
+    {k:'macro-run', log:'Macrotask dequeued'},
+    {k:'push', frame:{name:'setTimeout cb()', icon:'🟠', tag:'macrotask'}, line:3},
+    {k:'hl', line:3},
+    {k:'con', text:'<span style="color:#fb923c">4: macro</span>'},
+    {k:'pop', line:3, log:'Macrotask done'},
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'✅ Order confirmed: sync → microtask → macrotask'},
+    {k:'done'},
+  ]
+},
+
+asyncawait: {
+  name:'async-await.js',
+  code:[
+    {t:`<span class="kw">async function</span> <span class="fn">fetchUser</span>() {`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"fetching..."</span>);`},
+    {t:`  <span class="kw">const</span> <span class="vc">data</span> <span class="op">=</span> <span class="kw">await</span> <span class="fn">getUser</span>();`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"got:"</span>, <span class="vc">data</span>);`},
+    {t:`}`},
+    {t:``},
+    {t:`<span class="kw">function</span> <span class="fn">getUser</span>() {`},
+    {t:`  <span class="kw">return</span> <span class="kw">new</span> <span class="fn">Promise</span>(<span class="pm">res</span> <span class="op">=></span>`},
+    {t:`    <span class="fn">setTimeout</span>(() <span class="op">=></span> <span class="pm">res</span>(<span class="str">"Alice"</span>), <span class="num">500</span>)`},
+    {t:`  );`},
+    {t:`}`},
+    {t:``},
+    {t:`<span class="fn">fetchUser</span>();`},
+    {t:`console.<span class="fn">log</span>(<span class="str">"after call"</span>);`},
+  ],
+  steps:[
+    {k:'push', frame:{name:'main script', icon:'📄', tag:'global'}, line:12},
+    {k:'hl', line:12},
+    {k:'push', frame:{name:'fetchUser()', icon:'🔵', tag:'async fn'}, line:0},
+    {k:'hl', line:1},
+    {k:'con', text:'<span style="color:#34d399">fetching...</span>'},
+    {k:'hl', line:2},
+    {k:'push', frame:{name:'getUser()', icon:'🟢', tag:'sync'}, line:6},
+    {k:'hl', line:7},
+    {k:'wa-add', item:{name:'Timer 500ms → res("Alice")', icon:'⏱'}, log:'new Promise + setTimeout(500) → Web API'},
+    {k:'pop', line:7, log:'getUser() returns pending Promise'},
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'await suspends fetchUser() — yields control back to caller'},
+    {k:'pop', line:2, log:'fetchUser() suspended at await keyword'},
+    {k:'hl', line:13},
+    {k:'con', text:'<span style="color:#34d399">after call</span>'},
+    {k:'pop', line:13, log:'Sync code done — stack empty'},
+    {k:'loop', nodes:['eln-w'], arrs:['ea3'], desc:'Web API timer running (500ms)…'},
+    {k:'wa-done', log:'500ms done → resolve("Alice") → microtask'},
+    {k:'micro-add', item:{name:'resume fetchUser (data="Alice")', icon:'💜'}, log:'Promise resolved → resume after await → Microtask Queue'},
+    {k:'loop', nodes:['eln-s','eln-m'], arrs:['ea1'], desc:'Stack empty → Event Loop drains Microtasks'},
+    {k:'micro-run', log:'Microtask: resume fetchUser() after await'},
+    {k:'push', frame:{name:'fetchUser() resumed', icon:'🔵', tag:'microtask'}, line:3},
+    {k:'hl', line:3},
+    {k:'con', text:'<span style="color:#a78bfa">got: Alice</span>'},
+    {k:'pop', line:3, log:'fetchUser() resumed and completed'},
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'All done ✅ async/await = syntactic sugar over Promises'},
+    {k:'done'},
+  ]
+},
+
+mixed: {
+  name:'mixed-full.js',
+  code:[
+    {t:`console.<span class="fn">log</span>(<span class="str">"script start"</span>);   <span class="cmt">// 1</span>`},
+    {t:``},
+    {t:`<span class="fn">setTimeout</span>(() <span class="op">=></span> {`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"setTimeout"</span>);  <span class="cmt">// 5</span>`},
+    {t:`}, <span class="num">0</span>);`},
+    {t:``},
+    {t:`<span class="kw">new</span> <span class="fn">Promise</span>((<span class="pm">res</span>) <span class="op">=></span> {`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"promise body"</span>); <span class="cmt">// 2</span>`},
+    {t:`  <span class="pm">res</span>(<span class="str">"ok"</span>);`},
+    {t:`}).<span class="fn">then</span>(<span class="pm">v</span> <span class="op">=></span> {`},
+    {t:`  console.<span class="fn">log</span>(<span class="str">"then:"</span>, <span class="pm">v</span>);   <span class="cmt">// 4</span>`},
+    {t:`});`},
+    {t:``},
+    {t:`console.<span class="fn">log</span>(<span class="str">"script end"</span>);    <span class="cmt">// 3</span>`},
+  ],
+  steps:[
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'Script starts — synchronous code runs top to bottom'},
+    {k:'push', frame:{name:'main script', icon:'📄', tag:'global'}, line:0},
+    {k:'hl', line:0},
+    {k:'con', text:'<span style="color:#34d399">1: script start</span>'},
+    {k:'hl', line:2},
+    {k:'push', frame:{name:'setTimeout(..., 0)', icon:'🟠', tag:'sync'}, line:2},
+    {k:'wa-add', item:{name:'Timer 0ms', icon:'⏱'}, log:'setTimeout(0) → Web API'},
+    {k:'wa-done', log:'0ms → callback moves to Macrotask Queue'},
+    {k:'macro-add', item:{name:'() => log("5: setTimeout")', icon:'🟠'}, log:'Macrotask queued'},
+    {k:'pop', line:4, log:'setTimeout() returns'},
+    {k:'hl', line:6},
+    {k:'push', frame:{name:'new Promise(executor)', icon:'🔵', tag:'sync'}, line:6},
+    {k:'hl', line:7},
+    {k:'con', text:'<span style="color:#34d399">2: promise body</span>'},
+    {k:'hl', line:8},
+    {k:'pop', line:8, log:'Executor ran synchronously — res("ok") called'},
+    {k:'micro-add', item:{name:'.then(v => log(v))', icon:'💜'}, log:'Promise resolved → .then → Microtask Queue'},
+    {k:'hl', line:13},
+    {k:'con', text:'<span style="color:#34d399">3: script end</span>'},
+    {k:'pop', line:13, log:'Synchronous script finished'},
+    {k:'loop', nodes:['eln-s','eln-m'], arrs:['ea1'], desc:'Stack empty! Event Loop drains ALL microtasks before any macrotask'},
+    {k:'micro-run', log:'Microtask dequeued → Call Stack'},
+    {k:'push', frame:{name:'.then callback("ok")', icon:'💜', tag:'microtask'}, line:9},
+    {k:'hl', line:10},
+    {k:'con', text:'<span style="color:#a78bfa">4: then: ok</span>'},
+    {k:'pop', line:10, log:'.then() complete — microtask queue now empty'},
+    {k:'loop', nodes:['eln-s','eln-M'], arrs:['ea2'], desc:'Microtasks drained → Event Loop picks Macrotask'},
+    {k:'macro-run', log:'Macrotask dequeued → Call Stack'},
+    {k:'push', frame:{name:'setTimeout cb()', icon:'🟠', tag:'macrotask'}, line:3},
+    {k:'hl', line:3},
+    {k:'con', text:'<span style="color:#fb923c">5: setTimeout</span>'},
+    {k:'pop', line:3, log:'Macrotask done'},
+    {k:'loop', nodes:['eln-s'], arrs:[], desc:'✅ Final order: 1 → 2 → 3 → 4 → 5'},
+    {k:'done'},
+  ]
+},
+
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let steps=[], stepIdx=0, callStack=[], microQ=[], macroQ=[], webApi=[];
+let isRunning=false, runTimer=null, colorIdx=0, idCtr=0;
+const uid = () => ++idCtr;
+
+// ═══════════════════════════════════════════════════════════════
+//  PRESET LOAD
+// ═══════════════════════════════════════════════════════════════
+function loadPreset(key) {
+  resetAll();
+  const p = PRESETS[key];
+  document.getElementById('fname').textContent = p.name;
+  steps = p.steps;
+  document.getElementById('codedisplay').innerHTML = p.code.map((l,i) =>
+    `<div class="cl" id="cl${i}"><span class="ln">${i+1}</span><span class="lc">${l.t||' '}</span></div>`
+  ).join('');
+  updateSC();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════════════
+function renderStack() {
+  const el = document.getElementById('stackframes');
+  const emp = document.getElementById('sempty');
+  document.getElementById('sdepth').textContent = callStack.length;
+  emp.style.display = callStack.length ? 'none' : 'flex';
+  el.innerHTML = [...callStack].reverse().map(f =>
+    `<div class="sfr c${f.ci%5}"><span>${f.icon}</span><span style="flex:1">${f.name}</span><span class="ftag">${f.tag||''}</span></div>`
+  ).join('');
+}
+
+function renderQueueEl(bodyId, emptyId, cntId, arr, cls) {
+  document.getElementById(cntId).textContent = arr.length;
+  document.getElementById(emptyId).style.display = arr.length ? 'none' : 'flex';
+  const body = document.getElementById(bodyId);
+  body.querySelectorAll('.qi').forEach(e=>e.remove());
+  arr.forEach((item,i) => {
+    const d = document.createElement('div');
+    d.className = `qi ${cls}`; d.id = `qi${item.id}`;
+    d.innerHTML = `<span>${item.icon}</span><span style="flex:1">${item.name}</span><span class="qnext">${i===0?'← next':''}</span>`;
+    body.appendChild(d);
+  });
+}
+
+function renderWebApi() {
+  document.getElementById('wacnt').textContent = webApi.length;
+  document.getElementById('waempty').style.display = webApi.length ? 'none' : 'flex';
+  const body = document.getElementById('wabody');
+  body.querySelectorAll('.qi').forEach(e=>e.remove());
+  webApi.forEach(item => {
+    const d = document.createElement('div');
+    d.className = 'qi qw'; d.id = `wa${item.id}`;
+    d.innerHTML = `<span>${item.icon}</span><span style="flex:1">${item.name}</span>`;
+    body.appendChild(d);
+  });
+}
+
+function renderAll() {
+  renderStack();
+  renderQueueEl('microbody','microempty','microcnt', microQ,'qm');
+  renderQueueEl('macrobody','macroempty','macrocnt', macroQ,'qM');
+  renderWebApi();
+}
+
+function hl(line) {
+  document.querySelectorAll('.cl').forEach(e=>e.classList.remove('on','ex'));
+  if(line>=0) {
+    const el = document.getElementById(`cl${line}`);
+    if(el) { el.classList.add('on','ex'); el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+  }
+}
+
+function setLoop(nodes, arrs, desc) {
+  ['eln-s','eln-m','eln-M','eln-w'].forEach(id => document.getElementById(id).classList.toggle('anode', nodes.includes(id)));
+  ['ea1','ea2','ea3'].forEach(id => document.getElementById(id).classList.toggle('aarr', arrs.includes(id)));
+  const d = document.getElementById('eldesc');
+  d.textContent = desc||''; d.className = 'eldesc'+(desc?' a':'');
+}
+
+function log(type, msg) {
+  const body = document.getElementById('logb');
+  const cls = {push:'lpush',pop:'lpop',micro:'lmic',macro:'lmac',loop:'lloop',info:'linf'}[type]||'linf';
+  const d = document.createElement('div');
+  d.className='loge';
+  d.innerHTML=`<span class="lts">${stepIdx}</span><span class="${cls}">${msg}</span>`;
+  body.appendChild(d); body.scrollTop=body.scrollHeight;
+}
+
+function conOut(text) {
+  const el = document.getElementById('cout');
+  if(el.querySelector('span[style]')) el.innerHTML='';
+  const d = document.createElement('div');
+  d.className='cline';
+  d.innerHTML=`<span class="carr">›</span><span>${text}</span>`;
+  el.appendChild(d); el.scrollTop=el.scrollHeight;
+}
+
+function clearConsole() {
+  document.getElementById('cout').innerHTML='<span style="color:var(--muted);font-size:11px;">// output will appear here</span>';
+}
+
+function setStatus(state,txt) {
+  document.getElementById('sdot').className='sdot'+( state?' '+state:'');
+  document.getElementById('stxt').textContent=txt;
+}
+
+function updateSC() {
+  document.getElementById('sc').textContent=`Step ${stepIdx} / ${steps.length}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EXECUTE STEP
+// ═══════════════════════════════════════════════════════════════
+function execStep(s) {
+  switch(s.k) {
+    case 'push':
+      hl(s.line);
+      callStack.push({...s.frame, ci:colorIdx++, id:uid()});
+      renderStack();
+      log('push',`↑ PUSH  ${s.frame.name}`);
+      break;
+
+    case 'pop':
+      if(s.line>=0) hl(s.line);
+      if(s.log) log('pop',`↓ POP   ${s.log}`);
+      callStack.pop(); renderStack();
+      break;
+
+    case 'micro-add':
+      microQ.push({...s.item, id:uid()});
+      renderQueueEl('microbody','microempty','microcnt',microQ,'qm');
+      log('micro',`💜 ENQUEUE  ${s.item.name}`);
+      if(s.log) log('info','ℹ '+s.log);
+      break;
+
+    case 'micro-run':
+      if(microQ.length) { const it=microQ.shift(); renderQueueEl('microbody','microempty','microcnt',microQ,'qm'); log('micro',`💜 DEQUEUE → Stack  ${it.name}`); }
+      if(s.log) log('loop','🔄 '+s.log);
+      break;
+
+    case 'macro-add':
+      macroQ.push({...s.item, id:uid()});
+      renderQueueEl('macrobody','macroempty','macrocnt',macroQ,'qM');
+      log('macro',`🟠 ENQUEUE  ${s.item.name}`);
+      if(s.log) log('info','ℹ '+s.log);
+      break;
+
+    case 'macro-run':
+      if(macroQ.length) { const it=macroQ.shift(); renderQueueEl('macrobody','macroempty','macrocnt',macroQ,'qM'); log('macro',`🟠 DEQUEUE → Stack  ${it.name}`); }
+      if(s.log) log('loop','🔄 '+s.log);
+      break;
+
+    case 'wa-add':
+      webApi.push({...s.item, id:uid()});
+      renderWebApi();
+      log('info',`🌐 WebAPI  ${s.item.name}`);
+      if(s.log) log('info','ℹ '+s.log);
+      break;
+
+    case 'wa-done':
+      webApi.shift(); renderWebApi();
+      if(s.log) log('info','🌐 '+s.log);
+      break;
+
+    case 'hl':
+      hl(s.line);
+      if(s.log) log('info','ℹ '+s.log);
+      break;
+
+    case 'loop':
+      setLoop(s.nodes||[], s.arrs||[], s.desc||'');
+      log('loop','🔄 '+s.desc);
+      break;
+
+    case 'con':
+      conOut(s.text);
+      break;
+
+    case 'done':
+      setStatus('done','Execution complete ✅');
+      log('info','🏁 Program finished');
+      document.querySelectorAll('.cl').forEach(e=>e.classList.remove('on','ex'));
+      setLoop([],[],'Execution complete — all queues empty');
+      document.getElementById('btnstep').disabled=true;
+      document.getElementById('btnrun').disabled=true;
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════════════════════════════
+function stepFwd() {
+  if(stepIdx>=steps.length) return;
+  setStatus('run','Stepping…');
+  execStep(steps[stepIdx]); stepIdx++; updateSC();
+  if(steps[stepIdx-1]?.k==='done') {
+    document.getElementById('btnstep').disabled=true;
+    document.getElementById('btnrun').disabled=true;
+  }
+}
+
+function runAll() {
+  if(isRunning) return;
+  isRunning=true;
+  document.getElementById('btnrun').disabled=true;
+  document.getElementById('btnstep').disabled=true;
+  setStatus('run','Running…');
+  const spd = parseInt(document.getElementById('speed').value);
+  function tick() {
+    if(stepIdx>=steps.length){isRunning=false;return;}
+    execStep(steps[stepIdx]); stepIdx++; updateSC();
+    if(stepIdx<steps.length && steps[stepIdx-1]?.k!=='done') runTimer=setTimeout(tick,spd);
+    else isRunning=false;
+  }
+  tick();
+}
+
+function resetAll() {
+  clearTimeout(runTimer);
+  isRunning=false; stepIdx=0; colorIdx=0;
+  callStack=[]; microQ=[]; macroQ=[]; webApi=[];
+  renderAll();
+  setLoop([],[],'Waiting for execution…');
+  document.querySelectorAll('.cl').forEach(e=>e.classList.remove('on','ex'));
+  document.getElementById('logb').innerHTML='';
+  clearConsole();
+  document.getElementById('btnstep').disabled=false;
+  document.getElementById('btnrun').disabled=false;
+  setStatus('','Ready to execute');
+  updateSC();
+}
+
+// Speed
+document.getElementById('speed').addEventListener('input',function(){
+  document.getElementById('spv').textContent=this.value+'ms';
+});
+
+// Preset buttons
+const keys=['promise','settimeout','micromacro','asyncawait','mixed'];
+document.querySelectorAll('.pb').forEach((btn,i)=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.pb').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    loadPreset(keys[i]);
+  };
+});
+
+// Init
+loadPreset('promise');
+</script>
+</body>
+</html>
